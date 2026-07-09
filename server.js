@@ -31,13 +31,17 @@ class LiveEmailService {
         }
 
         // Initialize the Nodemailer transport engine configured for Gmail SMTP
+        // Initialize the Nodemailer transport engine configured for Gmail
         const transporter = nodemailer.createTransport({
             host: 'smtp.gmail.com',
-            port: 465,
-            secure: true, // Use SSL/TLS encryption protocols
+            port: 587,
+            secure: false, // Must be false for port 587
             auth: {
                 user: gmailUser,
-                pass: gmailAppPassword // Your 16-character generated app password
+                pass: gmailAppPassword 
+            },
+            tls: {
+                rejectUnauthorized: false // Prevents cloud routing cert drops
             }
         });
 
