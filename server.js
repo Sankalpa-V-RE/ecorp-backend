@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const nodemailer = require('nodemailer'); // Import the nodemailer library
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,51 +11,55 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-class MockEmailService {
-    static send(to, subject, body) {
+class LiveEmailService {
+    static async send(to, subject, body) {
         const logFile = path.join(__dirname, 'mock_emails.log');
-        const timestamp = new Date().toISOString();
-        const emailContent = `
-=========================================
-Timestamp: ${timestamp}
-From: E Corp Automated Defense <security@e-corp.local>
-To: ${to}
-Subject: ${subject}
+        
+        // Safely extract Gmail credentials from the system runtime variables
+        const gmailUser = process.env.GMAIL_USER;
+        const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
 
-${body}
-=========================================
-`;
+        // Fallback logging mechanism to ensure local traceability during development
+        const fallbackLog = `\n[Fallback Log] To: ${to} | Subject: ${subject}\n`;
+        fs.appendFileSync(logFile, fallbackLog, 'utf8');
 
-        // Log to console
-        console.log(emailContent);
+        // Check if environment variables are available before attempting real SMTP authentication
+        if (!gmailUser || !gmailAppPassword) {
+            console.log(`[E-Corp System] Gmail SMTP environment keys missing. Logging payload locally.`);
+            console.log(`To: ${to}\nSubject: ${subject}\nBody: ${body}`);
+            return;
+        }
 
-        // Log to file
-        fs.appendFileSync(logFile, emailContent, 'utf8');
+        // Initialize the Nodemailer transport engine configured for Gmail SMTP
+        const transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: 465,
+            secure: true, // Use SSL/TLS encryption protocols
+            auth: {
+                user: gmailUser,
+                pass: gmailAppPassword // Your 16-character generated app password
+            }
+        });
 
-        /*
-         * TODO FOR DEVELOPER:
-         * When taking this service live, replace this MockEmailService with a real Mailgun integration.
-         * You can use the 'mailgun-js' package or make an HTTP POST request directly to the Mailgun API:
-         * 
-         * fetch('https://api.mailgun.net/v3/YOUR_DOMAIN_NAME/messages', {
-         *   method: 'POST',
-         *   headers: {
-         *     'Authorization': 'Basic ' + Buffer.from('api:YOUR_API_KEY').toString('base64'),
-         *     'Content-Type': 'application/x-www-form-urlencoded'
-         *   },
-         *   body: new URLSearchParams({
-         *     from: 'E Corp Automated Defense <security@e-corp.local>',
-         *     to: to,
-         *     subject: subject,
-         *     text: body
-         *   })
-         * });
-         */
+        const mailOptions = {
+            from: `"E Corp Automated Defense" <${gmailUser}>`, // Must match your authenticated account domain
+            to: to,
+            subject: subject,
+            text: body
+        };
+
+        try {
+            // Dispatch the transmission over the SMTP layer
+            const info = await transporter.sendMail(mailOptions);
+            console.log(`[E-Corp System] Production email dispatched successfully via Nodemailer. Message ID: ${info.messageId}`);
+        } catch (error) {
+            console.error(`[E-Corp System] SMTP exception occurred during network delivery transmission:`, error);
+        }
     }
 }
 
 // POST endpoint for password reset
-app.post('/api/password-reset', (req, res) => {
+app.post('/api/password-reset', async (req, res) => {
     const { username, send_link_to } = req.body;
 
     if (!username || !send_link_to) {
@@ -63,7 +68,6 @@ app.post('/api/password-reset', (req, res) => {
 
     if (username === 'Tyrell.Wellick') {
         if (send_link_to === 't.wellick@e-corp.com') {
-            // Condition A: Normal behavior
             return res.status(200).json({ 
                 status: 'success', 
                 message: 'Reset link sent to registered email.' 
@@ -73,8 +77,8 @@ app.post('/api/password-reset', (req, res) => {
             const subject = "Anomalous activity detected - Isolation Routine Initiated";
             const body = "Anomalous activity detected on account. Core security module has tripped and encrypted the recovery token to prevent unauthorized access. Manual decryption required using the attached isolation routine block:\n\n(=<`$9]7<5YXz7wT.3,+O/o'K%$H\"~D|#z@b=`{^Lx8%$Xmrkpohm-kNi;gsedcba`_^]\\[ZYXWVUTSRQPONMLKJIHGFEDCBA@?>=<;:9876543s+O<oLm";
             
-            // Trigger the Mock Email Service
-            MockEmailService.send(send_link_to, subject, body);
+            // Asynchronously dispatch the email without blocking the response thread
+            LiveEmailService.send(send_link_to, subject, body);
 
             return res.status(200).json({
                 status: 'success',
@@ -82,7 +86,6 @@ app.post('/api/password-reset', (req, res) => {
             });
         }
     } else {
-        // Condition C: Generic Error for any other username
         return res.status(401).json({
             status: 'error',
             message: 'Invalid username or account not found.'
