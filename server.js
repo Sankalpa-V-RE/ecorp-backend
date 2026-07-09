@@ -28,41 +28,35 @@ class DataExfiltrationService {
         const logFile = path.join(__dirname, 'mock_emails.log');
         const timestamp = new Date().toISOString();
         
-        // Log locally to Render terminal console as a perpetual fallback backup
         console.log(`\n--- [E-Corp System Outbound Event] ---`);
-        console.log(`Destination: ${targetDestination}`);
-        console.log(`Payload Size: ${body.length} characters\n`);
+        console.log(`Destination: ${targetDestination}\n`);
 
         const fallbackLog = `\n[Log ${timestamp}] Target: ${targetDestination}\nPayload:\n${body}\n`;
         fs.appendFileSync(logFile, fallbackLog, 'utf8');
 
-        // Check if the player provided a valid HTTP/HTTPS url endpoint to exfiltrate to
         if (targetDestination.startsWith('http://') || targetDestination.startsWith('https://')) {
             try {
+                // Construct the email body format directly
+                const rawPayloadText = `Timestamp: ${timestamp}\nSubject: ${subject}\n\n${body}`;
+
                 const response = await fetch(targetDestination, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'text/plain', // Tell the server this is a raw text block
                         'X-E-Corp-Security-Alert': 'Anomalous-Activity-Triggered',
-                        'X-Originating-Sector': 'M-CIRC-08' // Hint referencing Malebolge 8th circle
+                        'X-Data-Encoding-Standard': 'Base64' 
                     },
-                    body: JSON.stringify({
-                        alert: subject,
-                        timestamp: timestamp,
-                        incident_response_data: body
-                    })
+                    body: rawPayloadText // Send the text string directly
                 });
 
                 if (response.ok) {
-                    console.log(`[E-Corp System] Data stream exfiltrated successfully via HTTP POST hook to: ${targetDestination}`);
+                    console.log(`[E-Corp System] Data stream exfiltrated successfully to: ${targetDestination}`);
                 } else {
                     console.error(`[E-Corp System] Target webhook rejected transmission with status code: ${response.status}`);
                 }
             } catch (error) {
                 console.error(`[E-Corp System] Network exception occurred during HTTP stream routing:`, error.message);
             }
-        } else {
-            console.log(`[E-Corp System] Target address '${targetDestination}' is not a URL structure. Outbound HTTP request aborted.`);
         }
     }
 }
