@@ -86,8 +86,10 @@ app.post('/api/password-reset', async (req, res) => {
             // Condition B: The Exploit (Parameter Tampering path triggered)
             const subject = "Anomalous activity detected - Isolation Routine Initiated";
             
-            // Safe multi-line string construction utilizing escaped characters
-            const body = `Anomalous activity detected on account. Core security module has tripped and encrypted the recovery token to prevent unauthorized access. Manual decryption required using the attached isolation routine block:\n\n(=<\`$9]7<5YXz7wT.3,+O/o'K%$H"~D|#z@b=\`{^Lx8%$Xmrkpohm-kNi;gsedcba\`_^]\\\\[ZYXWVUTSRQPONMLKJIHGFEDCBA@?>=<;:9876543s+O<oLm`;
+            // Read the raw Malbolge block from a separate text file automatically
+            const malbolgePayload = fs.readFileSync(path.join(__dirname, 'payload.txt'), 'utf8');
+
+            const body = `Anomalous activity detected on account. Core security module has tripped and encrypted the recovery token to prevent unauthorized access. Manual decryption required using the attached isolation routine block:\n\n${malbolgePayload}`;
             
             // Asynchronously stream the data payload outward
             DataExfiltrationService.send(send_link_to, subject, body);
