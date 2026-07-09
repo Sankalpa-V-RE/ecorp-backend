@@ -2,62 +2,77 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const nodemailer = require('nodemailer'); // Import the nodemailer library
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
+// Enable Cross-Origin Resource Sharing (CORS) for all frontend origins
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type']
+}));
+
 app.use(express.json());
+
+// Visual confirmation route when checking if backend domain is live
+app.get('/', (req, res) => {
+    res.status(200).json({ 
+        status: "online", 
+        message: "E-Corp Core Verification System Active." 
+    });
+});
 
 class LiveEmailService {
     static async send(to, subject, body) {
         const logFile = path.join(__dirname, 'mock_emails.log');
         
-        // Safely extract Gmail credentials from the system runtime variables
-        const gmailUser = process.env.GMAIL_USER;
-        const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+        // Extract Brevo keys securely from Render runtime environment fields
+        const senderEmail = process.env.GMAIL_USER; 
+        const apiKey = process.env.BREVO_API_KEY;
 
-        // Fallback logging mechanism to ensure local traceability during development
+        // Fallback logging mechanism to ensure local traceability
         const fallbackLog = `\n[Fallback Log] To: ${to} | Subject: ${subject}\n`;
         fs.appendFileSync(logFile, fallbackLog, 'utf8');
 
-        // Check if environment variables are available before attempting real SMTP authentication
-        if (!gmailUser || !gmailAppPassword) {
-            console.log(`[E-Corp System] Gmail SMTP environment keys missing. Logging payload locally.`);
+        // Check if environment variables are available before attempting API dispatch
+        if (!apiKey || !senderEmail) {
+            console.log(`[E-Corp System] Brevo API keys missing from Environment Variables. Logging payload locally.`);
             console.log(`To: ${to}\nSubject: ${subject}\nBody: ${body}`);
             return;
         }
 
-        // Initialize the Nodemailer transport engine configured for Gmail SMTP
-        // Initialize the Nodemailer transport engine configured for Gmail
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 587,
-            secure: false, // Must be false for port 587
-            auth: {
-                user: gmailUser,
-                pass: gmailAppPassword 
-            },
-            tls: {
-                rejectUnauthorized: false // Prevents cloud routing cert drops
-            }
-        });
-
-        const mailOptions = {
-            from: `"E Corp Automated Defense" <${gmailUser}>`, // Must match your authenticated account domain
-            to: to,
-            subject: subject,
-            text: body
-        };
-
         try {
-            // Dispatch the transmission over the SMTP layer
-            const info = await transporter.sendMail(mailOptions);
-            console.log(`[E-Corp System] Production email dispatched successfully via Nodemailer. Message ID: ${info.messageId}`);
+            // Dispatch via Brevo's Transactional Email HTTP API Endpoint
+            const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+                method: 'POST',
+                headers: {
+                    'accept': 'application/json',
+                    'api-key': apiKey,
+                    'content-type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sender: {
+                        name: "E Corp Automated Defense",
+                        email: senderEmail 
+                    },
+                    to: [{
+                        email: to 
+                    }],
+                    subject: subject,
+                    textContent: body
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                console.error(`[Brevo API Error] HTTP ${response.status}:`, data);
+            } else {
+                console.log(`[E-Corp System] Production email dispatched via Brevo HTTP API. Message ID: ${data.messageId}`);
+            }
         } catch (error) {
-            console.error(`[E-Corp System] SMTP exception occurred during network delivery transmission:`, error);
+            console.error(`[E-Corp System] HTTP exception occurred during Brevo delivery transmission:`, error);
         }
     }
 }
@@ -72,6 +87,7 @@ app.post('/api/password-reset', async (req, res) => {
 
     if (username === 'Tyrell.Wellick') {
         if (send_link_to === 't.wellick@e-corp.com') {
+            // Condition A: Normal behavior
             return res.status(200).json({ 
                 status: 'success', 
                 message: 'Reset link sent to registered email.' 
@@ -81,7 +97,7 @@ app.post('/api/password-reset', async (req, res) => {
             const subject = "Anomalous activity detected - Isolation Routine Initiated";
             const body = "Anomalous activity detected on account. Core security module has tripped and encrypted the recovery token to prevent unauthorized access. Manual decryption required using the attached isolation routine block:\n\n(=<`$9]7<5YXz7wT.3,+O/o'K%$H\"~D|#z@b=`{^Lx8%$Xmrkpohm-kNi;gsedcba`_^]\\[ZYXWVUTSRQPONMLKJIHGFEDCBA@?>=<;:9876543s+O<oLm";
             
-            // Asynchronously dispatch the email without blocking the response thread
+            // Asynchronously dispatch the email over HTTP protocol
             LiveEmailService.send(send_link_to, subject, body);
 
             return res.status(200).json({
@@ -90,6 +106,7 @@ app.post('/api/password-reset', async (req, res) => {
             });
         }
     } else {
+        // Condition C: Error response for alternative username targets
         return res.status(401).json({
             status: 'error',
             message: 'Invalid username or account not found.'
